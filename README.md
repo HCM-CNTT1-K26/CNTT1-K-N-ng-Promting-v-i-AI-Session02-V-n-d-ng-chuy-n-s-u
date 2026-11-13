@@ -1,48 +1,66 @@
-# CNTT1-K-N-ng-Promting-v-i-AI-Session02-V-n-d-ng-chuy-n-s-u
-PHẦN 1: THIẾT KẾ GIẢI PHÁP (I/O)
 
-Input: Văn bản thô từ khách hàng/nhân viên (có thể thiếu thông tin hoặc sai sót).
+### BÀI LÀM: THIẾT KẾ GIẢI PHÁP PROMPTING
 
-Output:
+**Bài toán:** Tự động trích xuất đơn hàng từ tin nhắn chat, kiểm tra lỗi thiếu dữ liệu/sai SĐT và ép định dạng JSON kèm bảng.
 
-Bảng tóm tắt nhanh cho nhân viên kiểm tra.
+---
 
-Định dạng JSON chuẩn để đẩy dữ liệu (CREATE) vào hệ thống.
+### Bước 1: Thiết kế giải pháp (I/O)
 
-Cơ chế bắt lỗi (INVALID) khi thiếu dữ liệu bắt buộc nhằm tránh AI tự bịa (hallucination).
+* **Input:** Tin nhắn thô của khách (ví dụ có lỗi thiếu SĐT, thiếu size).
+* **Output:**
+1. Cõi JSON chuẩn hóa cho hệ thống.
+2. Bảng Markdown (`Table`) tóm tắt cho nhân viên kiểm tra.
 
-PHẦN 2: PROMPT THỰC THI & KẾT QUẢ
-1. Khung Prompt sử dụng:
 
-"Bạn là trợ lý xử lý đơn hàng. Nhiệm vụ: Đọc đoạn văn bản thô, trích xuất thông tin thành Bảng Markdown và Khối JSON (action: CREATE).
-Quy tắc bắt buộc: Nếu thiếu Họ tên, SĐT hoặc Sản phẩm, phải ghi MISSING, đặt trạng thái INVALID và liệt kê lỗi trong mảng errors. Tuyệt đối không tự bịa thông tin.
-(Đính kèm 2 ví dụ mẫu Few-shot: 1 đơn hợp lệ, 1 đơn thiếu thông tin)
-Input cần xử lý: 'Lên đơn cho chị Mai ở Thủ Đức, sđt 0988777666 mua 3 hộp bánh trung thu thập cẩm loại lớn.'"
 
-2. Kết quả trả về:
+---
 
-Trường thông tin	Giá trị
-Khách hàng	Chị Mai
-Số điện thoại	0988777666
-Sản phẩm	Bánh trung thu thập cẩm (Loại lớn)
-Số lượng	3
-Địa chỉ	Thủ Đức (Thiếu số nhà, tên đường)
-Trạng thái	INVALID
-JSON
+### Bước 2: Viết Prompt & Chạy thử
+
+**Mẫu Prompt hoàn chỉnh (áp dụng CREATE + Few-shot + Bẫy lỗi):**
+
+
+[Role & Context] Bạn là AI bóc tách đơn hàng cho shop thời trang.
+[Few-shot Examples] (Dùng 2 ví dụ mẫu chuẩn hóa Input -> Output JSON).
+[Action & Target] Đọc tin nhắn sau và trích xuất: "shop ơi lấy mình 2 áo hoodie đen size XL với 1 quần jogger xám nhé, giao về 45/12 đường số 8 Linh Trung Thủ Đức. sđt 091234567, tên Huy. giao trước 5h chiều nay"
+[Constraints & Error Handling] 
+1. Nếu thiếu thông tin (tên, sđt, địa chỉ, size), bắt buộc điền "TRONG".
+2. Kiểm tra SĐT, nếu không đủ 10 số phải báo lỗi vào "canh_bao_loi" và đổi trang_thai thành "CAN_KIEM_TRA".
+3. Đầu ra bắt buộc gồm 1 khối JSON và 1 bảng Table.
+
+
+
+**Kết quả AI phản hồi:**
+
+json
+
 {
-  "action": "CREATE",
-  "status": "INVALID",
-  "order_data": {
-    "customer_name": "Chị Mai",
-    "phone": "0988777666",
-    "items": [
-      {
-        "product_name": "Bánh trung thu thập cẩm",
-        "variant": "Loại lớn",
-        "quantity": 3
-      }
-    ],
-    "shipping_address": "Thủ Đức"
-  },
-  "errors": ["Địa chỉ giao hàng chưa đủ chi tiết (thiếu số nhà, tên đường)"]
+
+  "trang_thai": "CAN_KIEM_TRA",
+  
+  "khach_hang": { "ten": "Huy", "sdt": "091234567", "dia_chi": "45/12 đường số 8, Linh Trung, Thủ Đức" },
+  
+  "san_pham": [
+
+  { "ten_sp": "Áo hoodie", "mau_sac": "Đen", "size": "XL", "so_luong": 2 },
+  
+  { "ten_sp": "Quần jogger", "mau_sac": "Xám", "size": "TRONG", "so_luong": 1 }
+  
+  ],
+  
+  "ghi_chu_giao": "Giao trước 5h chiều nay",
+  
+  "canh_bao_loi": ["SĐT thiếu 1 số (9 chữ số)", "Quần jogger chưa có size"]
+
 }
+
+
+
+| Hạng mục | Dữ liệu trích xuất | Tình trạng lỗi |
+| --- | --- | --- |
+| **Khách hàng** | Huy | Đầy đủ |
+| **SĐT** | 091234567 | **Lỗi (Thiếu 1 số)** |
+| **Địa chỉ** | 45/12 đường số 8, Linh Trung, Thủ Đức | Đầy đủ |
+| **Sản phẩm 1** | Áo hoodie - Đen - Size XL (SL: 2) | Hợp lệ |
+| **Sản phẩm 2** | Quần jogger - Xám - Size: `TRONG` (SL: 1) | **Lỗi (Thiếu size)** |
